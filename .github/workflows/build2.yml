@@ -1,4 +1,4 @@
-name: Build Suwayomi Server Native Windows from Release JAR
+name: Build from Release JAR
 
 on:
   workflow_dispatch:
