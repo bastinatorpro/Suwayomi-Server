@@ -28,13 +28,14 @@ jobs:
           distribution: 'graalvm-community'
           components: 'native-image'
 
-      # 4. Сборка Native Image
+      # 4. Сборка Native Image (обход ошибки ForceOnModulePath)
       - name: Build Native Image
         run: |
           native-image \
             --no-fallback \
             --install-exit-handlers \
-            -jar Suwayomi-Server.jar SuwayomiServer
+            --class-path Suwayomi-Server.jar \
+            -H:Name=SuwayomiServer
 
       # 5. Сохраняем бинарник как артефакт
       - name: Upload binary artifact
