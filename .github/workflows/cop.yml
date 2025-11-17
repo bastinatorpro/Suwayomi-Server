@@ -1,20 +1,18 @@
-name: Build Suwayomi-Server Native Image
+name: Build Suwayomi-Server Native Image (Windows)
 
 on:
-  workflow_dispatch:   # запуск вручную
+  workflow_dispatch:
   push:
     branches: [ "main" ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest   # можно заменить на windows-latest для .exe
+    runs-on: windows-latest
 
     steps:
-      # 1. Получаем код (если нужен сам репозиторий)
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем GraalVM 21 сразу, чтобы jar был правильной версии
       - name: Set up GraalVM 21
         uses: graalvm/setup-graalvm@v1
         with:
@@ -22,34 +20,30 @@ jobs:
           distribution: 'graalvm-community'
           components: 'native-image'
 
-      # 3. Скачиваем готовый JAR Suwayomi-Server
       - name: Download Suwayomi-Server JAR
         run: |
-          curl -L -o Suwayomi-Server.jar \
+          curl -L -o Suwayomi-Server.jar ^
           https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.1.1867/Suwayomi-Server-v2.1.1867.jar
 
-      # 4. Удаляем проблемный native-image.properties с помощью jar из GraalVM 21
-      - name: Clean JAR (remove ForceOnModulePath)
+      - name: Clean JAR (remove all native-image.properties)
         run: |
           mkdir unpacked
           cd unpacked
-          "${JAVA_HOME}/bin/jar" xf ../Suwayomi-Server.jar
-          rm -f META-INF/native-image/org.graalvm.sdk/word/native-image.properties
-          "${JAVA_HOME}/bin/jar" cf ../Suwayomi-Server-clean.jar .
+          "%JAVA_HOME%\bin\jar" xf ..\Suwayomi-Server.jar
+          del /S /Q META-INF\native-image\native-image.properties
+          "%JAVA_HOME%\bin\jar" cf ..\Suwayomi-Server-clean.jar .
           cd ..
 
-      # 5. Сборка Native Image
       - name: Build Native Image
         run: |
-          native-image \
-            --no-fallback \
-            --install-exit-handlers \
-            --class-path Suwayomi-Server-clean.jar \
-            -H:Name=SuwayomiServer
+          native-image ^
+            --no-fallback ^
+            --install-exit-handlers ^
+            --class-path Suwayomi-Server-clean.jar ^
+            -H:Name=SuwayomiServer.exe
 
-      # 6. Сохраняем бинарник как артефакт
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: suwayomi-native
-          path: SuwayomiServer
+          name: suwayomi-native-windows
+          path: SuwayomiServer.exe
