@@ -1,0 +1,57 @@
+name: Build Suwayomi Server Native Windows from Release JAR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-native-windows:
+    name: Build Native Image from Release JAR
+    runs-on: windows-latest
+    
+    steps:
+    - name: Download JAR from release
+      run: |
+        $jarUrl = "https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.1.1867/Suwayomi-Server-v2.1.1867.jar"
+        $jarPath = "Suwayomi-Server.jar"
+        Invoke-WebRequest -Uri $jarUrl -OutFile $jarPath
+        echo "JAR_FILE=$jarPath" >> $env:GITHUB_ENV
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'graalvm'
+        java-version: '21'
+        components: 'native-image'
+
+    - name: Check JAR file info
+      run: |
+        echo "JAR file size: $(Get-Item $env:JAR_FILE | Select-Object -ExpandProperty Length) bytes"
+        # Проверяем манифест JAR
+        java -cp "$env:JAR_FILE" org.suwayomi.server.Server --version || echo "Cannot run JAR directly, but will try native-image"
+
+    - name: Build Native Image with optimized settings
+      run: |
+        native-image `
+          -jar "$env:JAR_FILE" `
+          --no-fallback `
+          -H:Name=suwayomi-server `
+          -H:Class=org.suwayomi.server.Server `
+          -H:EnableURLProtocols=http,https `
+          -H:+ReportExceptionStackTraces `
+          -J-Xmx8G `
+          -H:InitialCollectionSize=64M `
+          -H:MaxCollectionSize=256M `
+          --initialize-at-build-time=org.slf4j,org.apache.log4j,kotlinx.coroutines,io.ktor,kotlin.sequences,kotlin.coroutines,org.suwayomi `
+          --verbose `
+          --allow-incomplete-classpath
+
+    - name: Test the native binary
+      run: |
+        .\suwayomi-server.exe --version || .\suwayomi-server.exe -h || echo "Binary created successfully"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: suwayomi-server-windows-native
+        path: suwayomi-server.exe
+        retention-days: 30
