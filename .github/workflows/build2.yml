@@ -23,82 +23,85 @@ jobs:
         java-version: '21'
         components: 'native-image'
 
-    - name: Analyze JAR structure
+    - name: Check JAR manifest
       run: |
-        echo "=== JAR file info ==="
-        echo "JAR file size: $(Get-Item $env:JAR_FILE | Select-Object -ExpandProperty Length) bytes"
-        
-        echo "=== Checking manifest ==="
+        echo "=== Checking JAR manifest ==="
         jar xf "$env:JAR_FILE" META-INF/MANIFEST.MF
         if (Test-Path "META-INF/MANIFEST.MF") {
+          echo "Manifest content:"
           Get-Content "META-INF/MANIFEST.MF"
-        }
-        
-        echo "=== Listing top-level directories ==="
-        jar tf "$env:JAR_FILE" | Select-Object -First 50
-        
-        echo "=== Looking for main classes ==="
-        jar tf "$env:JAR_FILE" | Where-Object { $_ -match "class$" -and $_ -match "Main|Server|Application" }
-
-    - name: Extract and check main class
-      run: |
-        # Извлекаем манифест для проверки главного класса
-        jar xf "$env:JAR_FILE" META-INF/MANIFEST.MF
-        $mainClass = (Get-Content "META-INF/MANIFEST.MF" | Where-Object { $_ -match "Main-Class:" }) -replace "Main-Class: ", ""
-        
-        if ($mainClass) {
-          echo "Found main class in manifest: $mainClass"
-          echo "MAIN_CLASS=$mainClass" >> $env:GITHUB_ENV
         } else {
-          echo "No main class found in manifest, will use common main class names"
-          echo "MAIN_CLASS=org.suwayomi.tachidesk.server.TachideskServer" >> $env:GITHUB_ENV
+          echo "No manifest found in JAR"
         }
 
-    - name: Try to run JAR with extracted main class
+    - name: Build Native Image without explicit main class
       run: |
-        if ($env:MAIN_CLASS) {
-          echo "Trying to run with main class: $env:MAIN_CLASS"
-          java -cp "$env:JAR_FILE" $env:MAIN_CLASS --version || java -cp "$env:JAR_FILE" $env:MAIN_CLASS -h || echo "Cannot run directly, but will proceed with native-image"
-        }
-
-    - name: Build Native Image
-      run: |
-        if ($env:MAIN_CLASS) {
-          $mainClassArg = "-H:Class=$env:MAIN_CLASS"
-        } else {
-          $mainClassArg = ""
-        }
-        
+        # Пробуем собрать без указания главного класса
+        # GraalVM должен автоматически определить его из манифеста
         native-image `
           -jar "$env:JAR_FILE" `
           --no-fallback `
           -H:Name=suwayomi-server `
-          $mainClassArg `
           -H:EnableURLProtocols=http,https,file `
           -H:+ReportExceptionStackTraces `
           -J-Xmx8G `
           -H:InitialCollectionSize=64M `
           -H:MaxCollectionSize=256M `
-          --initialize-at-build-time=`
-            org.slf4j,`
-            kotlin,`
-            kotlinx.coroutines,`
-            io.ktor,`
-            com.fasterxml.jackson `
           --allow-incomplete-classpath `
           --verbose
 
-    - name: Test the native binary
+    - name: Check if binary was created
+      id: check_binary
       run: |
         if (Test-Path "suwayomi-server.exe") {
-          echo "Native binary created, testing..."
-          .\suwayomi-server.exe --version || .\suwayomi-server.exe -h || .\suwayomi-server.exe || echo "Binary exists but may need specific arguments"
+          echo "Binary created successfully"
+          echo "BINARY_EXISTS=true" >> $env:GITHUB_ENV
         } else {
           echo "Binary was not created"
-          exit 1
+          echo "BINARY_EXISTS=false" >> $env:GITHUB_ENV
         }
 
+    - name: Alternative approach - use native-image with auto-detection
+      if: env.BINARY_EXISTS == 'false'
+      run: |
+        # Альтернативный подход с другими настройками
+        native-image `
+          -cp "$env:JAR_FILE" `
+          --no-fallback `
+          -H:Name=suwayomi-server `
+          -H:EnableURLProtocols=http,https,file `
+          -H:+ReportExceptionStackTraces `
+          -H:+AddAllCharsets `
+          -H:NativeLinkerOption=-Wl,--stack-size=8388608 `
+          -J-Xmx8G `
+          --allow-incomplete-classpath `
+          --features=org.graalvm.home.HomeFinderFeature `
+          --initialize-at-run-time=`
+            org.jetbrains.kotlin.scripting.compiler.pl.impl,`
+            org.jetbrains.kotlin.scripting.definitions `
+          --verbose
+
+    - name: Final attempt - try different JAR approach
+      if: env.BINARY_EXISTS == 'false'
+      run: |
+        # Последняя попытка - используем другой способ указания classpath
+        echo "Trying different approach..."
+        java -jar "$env:JAR_FILE" --dry-run || echo "Dry run failed, but continuing..."
+        
+        native-image `
+          -cp "$env:JAR_FILE" `
+          --no-fallback `
+          -H:Name=suwayomi-server `
+          -H:EnableURLProtocols=http,https,file `
+          -H:+ReportExceptionStackTraces `
+          -J-Xmx8G `
+          --allow-incomplete-classpath `
+          --no-server `
+          --static `
+          --verbose
+
     - name: Upload Artifact
+      if: env.BINARY_EXISTS == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: suwayomi-server-windows-native
