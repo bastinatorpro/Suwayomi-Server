@@ -1,0 +1,9 @@
+[
+  {
+    "name": "org.suwayomi.server.Server",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true
+  }
+]
