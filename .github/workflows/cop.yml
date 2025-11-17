@@ -1,10 +1,3 @@
-name: Build Suwayomi-Server Native Image (Windows)
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ "main" ]
-
 jobs:
   build:
     runs-on: windows-latest
@@ -22,24 +15,23 @@ jobs:
 
       - name: Download Suwayomi-Server JAR
         run: |
-          curl -L -o Suwayomi-Server.jar ^
-          https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.1.1867/Suwayomi-Server-v2.1.1867.jar
+          Invoke-WebRequest -Uri "https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.1.1867/Suwayomi-Server-v2.1.1867.jar" -OutFile "Suwayomi-Server.jar"
 
       - name: Clean JAR (remove all native-image.properties)
         run: |
           mkdir unpacked
           cd unpacked
-          "%JAVA_HOME%\bin\jar" xf ..\Suwayomi-Server.jar
-          del /S /Q META-INF\native-image\native-image.properties
-          "%JAVA_HOME%\bin\jar" cf ..\Suwayomi-Server-clean.jar .
+          & "$env:JAVA_HOME\bin\jar.exe" xf ..\Suwayomi-Server.jar
+          Get-ChildItem -Path META-INF\native-image -Filter native-image.properties -Recurse | Remove-Item -Force
+          & "$env:JAVA_HOME\bin\jar.exe" cf ..\Suwayomi-Server-clean.jar .
           cd ..
 
       - name: Build Native Image
         run: |
-          native-image ^
-            --no-fallback ^
-            --install-exit-handlers ^
-            --class-path Suwayomi-Server-clean.jar ^
+          native-image `
+            --no-fallback `
+            --install-exit-handlers `
+            --class-path Suwayomi-Server-clean.jar `
             -H:Name=SuwayomiServer.exe
 
       - name: Upload binary artifact
