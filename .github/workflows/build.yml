@@ -1,0 +1,45 @@
+name: Build Suwayomi Server Native Windows
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-native-windows:
+    name: Build Native Image for Windows
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'graalvm'
+        java-version: '21'
+        components: 'native-image'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Build with Gradle
+      run: |
+        .\gradlew.bat :server:build --no-daemon
+
+    - name: Build Native Image
+      run: |
+        $JAR_PATH = (Get-ChildItem -Path "server\build\libs" -Filter "*.jar" | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+        native-image -jar "$JAR_PATH" --no-fallback -H:Name=suwayomi-server -H:EnableURLProtocols=http,https -H:+ReportExceptionStackTraces
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: suwayomi-server-windows
+        path: suwayomi-server.exe
+        retention-days: 7
