@@ -1,0 +1,44 @@
+name: Build Suwayomi-Server Native Image
+
+on:
+  workflow_dispatch:   # запуск вручную
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest   # можно заменить на windows-latest для .exe
+
+    steps:
+      # 1. Получаем код (если нужен сам репозиторий)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Скачиваем готовый JAR Suwayomi-Server
+      - name: Download Suwayomi-Server JAR
+        run: |
+          curl -L -o Suwayomi-Server.jar \
+          https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.1.1867/Suwayomi-Server-v2.1.1867.jar
+
+      # 3. Устанавливаем GraalVM 21
+      - name: Set up GraalVM 21
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm-community'
+          components: 'native-image'
+
+      # 4. Сборка Native Image
+      - name: Build Native Image
+        run: |
+          native-image \
+            --no-fallback \
+            --install-exit-handlers \
+            -jar Suwayomi-Server.jar SuwayomiServer
+
+      # 5. Сохраняем бинарник как артефакт
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: suwayomi-native
+          path: SuwayomiServer
