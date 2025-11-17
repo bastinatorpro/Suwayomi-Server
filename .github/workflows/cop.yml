@@ -20,7 +20,17 @@ jobs:
           curl -L -o Suwayomi-Server.jar \
           https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.1.1867/Suwayomi-Server-v2.1.1867.jar
 
-      # 3. Устанавливаем GraalVM 21
+      # 3. Удаляем проблемный native-image.properties
+      - name: Clean JAR (remove ForceOnModulePath)
+        run: |
+          mkdir unpacked
+          cd unpacked
+          jar xf ../Suwayomi-Server.jar
+          rm -f META-INF/native-image/org.graalvm.sdk/word/native-image.properties
+          jar cf ../Suwayomi-Server-clean.jar .
+          cd ..
+
+      # 4. Устанавливаем GraalVM 21
       - name: Set up GraalVM 21
         uses: graalvm/setup-graalvm@v1
         with:
@@ -28,16 +38,16 @@ jobs:
           distribution: 'graalvm-community'
           components: 'native-image'
 
-      # 4. Сборка Native Image (обход ошибки ForceOnModulePath)
+      # 5. Сборка Native Image
       - name: Build Native Image
         run: |
           native-image \
             --no-fallback \
             --install-exit-handlers \
-            --class-path Suwayomi-Server.jar \
+            --class-path Suwayomi-Server-clean.jar \
             -H:Name=SuwayomiServer
 
-      # 5. Сохраняем бинарник как артефакт
+      # 6. Сохраняем бинарник как артефакт
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
