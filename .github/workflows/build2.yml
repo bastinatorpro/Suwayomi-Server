@@ -1,4 +1,4 @@
-name: Build from Release JAR
+name: Build Suwayomi Server Native Windows from Release JAR
 
 on:
   workflow_dispatch:
@@ -23,31 +23,80 @@ jobs:
         java-version: '21'
         components: 'native-image'
 
-    - name: Check JAR file info
+    - name: Analyze JAR structure
       run: |
+        echo "=== JAR file info ==="
         echo "JAR file size: $(Get-Item $env:JAR_FILE | Select-Object -ExpandProperty Length) bytes"
-        # Проверяем манифест JAR
-        java -cp "$env:JAR_FILE" org.suwayomi.server.Server --version || echo "Cannot run JAR directly, but will try native-image"
+        
+        echo "=== Checking manifest ==="
+        jar xf "$env:JAR_FILE" META-INF/MANIFEST.MF
+        if (Test-Path "META-INF/MANIFEST.MF") {
+          Get-Content "META-INF/MANIFEST.MF"
+        }
+        
+        echo "=== Listing top-level directories ==="
+        jar tf "$env:JAR_FILE" | Select-Object -First 50
+        
+        echo "=== Looking for main classes ==="
+        jar tf "$env:JAR_FILE" | Where-Object { $_ -match "class$" -and $_ -match "Main|Server|Application" }
 
-    - name: Build Native Image with optimized settings
+    - name: Extract and check main class
       run: |
+        # Извлекаем манифест для проверки главного класса
+        jar xf "$env:JAR_FILE" META-INF/MANIFEST.MF
+        $mainClass = (Get-Content "META-INF/MANIFEST.MF" | Where-Object { $_ -match "Main-Class:" }) -replace "Main-Class: ", ""
+        
+        if ($mainClass) {
+          echo "Found main class in manifest: $mainClass"
+          echo "MAIN_CLASS=$mainClass" >> $env:GITHUB_ENV
+        } else {
+          echo "No main class found in manifest, will use common main class names"
+          echo "MAIN_CLASS=org.suwayomi.tachidesk.server.TachideskServer" >> $env:GITHUB_ENV
+        }
+
+    - name: Try to run JAR with extracted main class
+      run: |
+        if ($env:MAIN_CLASS) {
+          echo "Trying to run with main class: $env:MAIN_CLASS"
+          java -cp "$env:JAR_FILE" $env:MAIN_CLASS --version || java -cp "$env:JAR_FILE" $env:MAIN_CLASS -h || echo "Cannot run directly, but will proceed with native-image"
+        }
+
+    - name: Build Native Image
+      run: |
+        if ($env:MAIN_CLASS) {
+          $mainClassArg = "-H:Class=$env:MAIN_CLASS"
+        } else {
+          $mainClassArg = ""
+        }
+        
         native-image `
           -jar "$env:JAR_FILE" `
           --no-fallback `
           -H:Name=suwayomi-server `
-          -H:Class=org.suwayomi.server.Server `
-          -H:EnableURLProtocols=http,https `
+          $mainClassArg `
+          -H:EnableURLProtocols=http,https,file `
           -H:+ReportExceptionStackTraces `
           -J-Xmx8G `
           -H:InitialCollectionSize=64M `
           -H:MaxCollectionSize=256M `
-          --initialize-at-build-time=org.slf4j,org.apache.log4j,kotlinx.coroutines,io.ktor,kotlin.sequences,kotlin.coroutines,org.suwayomi `
-          --verbose `
-          --allow-incomplete-classpath
+          --initialize-at-build-time=`
+            org.slf4j,`
+            kotlin,`
+            kotlinx.coroutines,`
+            io.ktor,`
+            com.fasterxml.jackson `
+          --allow-incomplete-classpath `
+          --verbose
 
     - name: Test the native binary
       run: |
-        .\suwayomi-server.exe --version || .\suwayomi-server.exe -h || echo "Binary created successfully"
+        if (Test-Path "suwayomi-server.exe") {
+          echo "Native binary created, testing..."
+          .\suwayomi-server.exe --version || .\suwayomi-server.exe -h || .\suwayomi-server.exe || echo "Binary exists but may need specific arguments"
+        } else {
+          echo "Binary was not created"
+          exit 1
+        }
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
