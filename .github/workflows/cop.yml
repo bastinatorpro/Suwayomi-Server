@@ -1,3 +1,10 @@
+name: Build Native Image (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    
 jobs:
   build:
     runs-on: windows-latest
