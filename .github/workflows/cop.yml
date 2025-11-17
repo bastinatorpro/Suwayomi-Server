@@ -29,18 +29,21 @@ jobs:
           mkdir unpacked
           cd unpacked
           & "$env:JAVA_HOME\bin\jar.exe" xf ..\Suwayomi-Server.jar
-          Get-ChildItem -Path META-INF\native-image -Filter native-image.properties -Recurse | Remove-Item -Force
-          & "$env:JAVA_HOME\bin\jar.exe" cf ..\Suwayomi-Server-clean.jar .
+          Get-ChildItem META-INF\native-image -Filter native-image.properties -Recurse | Remove-Item -Force
+          & "$env:JAVA_HOME\bin\jar.exe" cfm ..\Suwayomi-Server-clean.jar META-INF\MANIFEST.MF -C . .
           cd ..
 
-      - name: Build Native Image
+      - name: Verify main class exists
         run: |
-          native-image `
-            --no-fallback `
-            --install-exit-handlers `
-            --class-path Suwayomi-Server-clean.jar `
-            -H:Class=suwayomi.server.ServerKt `
-            -H:Name=SuwayomiServer
+          & "$env:JAVA_HOME\bin\jar.exe" tf Suwayomi-Server-clean.jar | Select-String "suwayomi/server/ServerKt.class"
+
+      - name: Build Native Image
+        shell: pwsh
+        run: >
+          native-image --no-fallback --install-exit-handlers
+          --class-path Suwayomi-Server-clean.jar
+          -H:Class=suwayomi.server.ServerKt
+          -H:Name=SuwayomiServer
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
